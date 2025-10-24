@@ -1,78 +1,104 @@
-import os
-from time import perf_counter
+import enum
 import itertools as it
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
-from PIL import Image
+import evn
+import tiling
 
-matplotlib.use('TkAgg')
-# USE_TORCH = True
-USE_TORCH = False
-if USE_TORCH:
+# mode = 'torch'
+mode = 'numpy'
+# mode='cpp'
+
+if mode == 'torch':
     import torch as th
+elif mode == 'cpp':
+    import arctic_circle_
 
-U = 2
-D = -2
-L = -1
-R = 1
-EMPTY = 3
-ERROR = 4
-CORNER = 5
-_show_grids = []
+class Cell(enum.IntEnum):
+    U = 1
+    D = 2
+    L = 3
+    R = 4
+    EMPTY = 5
+    ERROR = 6
+    CORNER = 7
 
 def main():
-    tstart = t = perf_counter()
-    N = 512
+    arctic_circle_sanity_check()
+    # show_arctic_circle_steps(4, seed=2)
+    # show_arctic_circle_steps(4)
+    # show_arctic_circle_pow2(8)
+    make_arctic_circle_mov()
+
+def make_arctic_circle_mov():
+    # grids = [compute_arctic_circle_grids(100).grids[-1] for i in range(50)]
+    grids = compute_arctic_circle_grids(1080).grids
+    # grids = compute_arctic_circle_grids(540).grids
+    print('make rgb', flush=True)
+    imgs = [tiling.make_rgb_array(g, ARCTIC_CIRCLE_COLORS) for g in grids]
+    imgs = [(img * 255).astype(np.uint8) for img in imgs]
+    tiling.create_video_from_arrays(imgs, 'test.mp4')
+
+def show_arctic_circle_steps(N, seed=-1):
+    if seed > 0:
+        np.random.seed(seed)
+    info = compute_arctic_circle_grids(N, debug=True)
+    for step in info.steps:
+        add_UDLR_grig_to_plot(step)
+    finish_UDLR_image_plot(info.grids[-1], save=False)
+
+def show_arctic_circle_pow2(power2):
+    N = 2**power2
+    info = compute_arctic_circle_grids(N)
+    for i in range(int(np.log2(N))):
+        print(f'time iter {2**i:4} {info.times[2**i]*1000:7.3f}ms')
+        add_UDLR_grig_to_plot(info.grids[2**i])
+    finish_UDLR_image_plot(info.grids[-1])
+
+def compute_arctic_circle_grids(N, debug=False):
     # np.random.seed(2)
-    grid = make_aztec_diamond(2)
-    fill_empty_rand(grid)
+    previous = fill_empty_rand(make_aztec_diamond(2))
+    result = evn.Bunch(grids=[previous], times=[0], steps=[])
     for i in range(1, N):
-        # if np.log2(i) % 1 == 0: show_grid(grid)
-        remove_facing(grid)
-        grid2 = expand_grid(grid)
-        fill_empty_rand(grid2)
-        grid = grid2
-        if i % 100 == 0:
-            print(f'{i:4} {perf_counter() - t:9.3f}', flush=True)
-            t = perf_counter()
-    print(f'generation time {perf_counter() - tstart:9.3f}')
-    show_grid(grid)
-    img = Image.fromarray((_show_grids[-1] * 255).astype(np.int8))
-    img.convert("I;16").save(f'arctic_circle_{N}.png')
-    # img.save(f'arctic_circle_{N}.png')
-    finish_show()
+        timer = evn.Chrono()
+        pruned = remove_facing(previous)
+        expanded = expand_grid(pruned)
+        filled = fill_empty_rand(expanded)
+        previous = filled
+        result.grids.append(filled)
+        result.times.append(timer.elapsed())
+        if i%100 == 0: print(i, timer.elapsed()*1000, flush=True)
+        if debug: result.steps.extend([pruned, expanded, filled])
+    return result
 
 def expand_grid(grid):
+    expanded = make_aztec_diamond(len(grid) + 2)
     n = len(grid)
-    new = make_aztec_diamond(len(grid) + 2)
-    # new = np.ones((len(grid)+2,len(grid)+2), dtype=np.int16) * CORNER
-    new[new == EMPTY] = 0
-    new[:n, 1:-1] += U * (grid == U)
-    new[2:, 1:-1] += D * (grid == D)
-    new[1:-1, :n] += L * (grid == L)
-    new[1:-1, 2:] += R * (grid == R)
-    new[new == 0] = EMPTY
-    return new
+    expanded[expanded == Cell.EMPTY] = 0
+    expanded[:n, 1:-1] += Cell.U * (grid == Cell.U)
+    expanded[2:, 1:-1] += Cell.D * (grid == Cell.D)
+    expanded[1:-1, :n] += Cell.L * (grid == Cell.L)
+    expanded[1:-1, 2:] += Cell.R * (grid == Cell.R)
+    expanded[expanded == 0] = Cell.EMPTY
+    return expanded
     # for i, j in it.product(range(len(grid)), range(len(grid))):
-    #     if grid[i, j] == U: new[i, j + 1:j + 3] = U
-    #     if grid[i, j] == D: new[i + 2, j + 1:j + 3] = D
-    #     if grid[i, j] == L: new[i + 1:i + 3, j] = L
-    #     if grid[i, j] == R: new[i + 1:i + 3, j + 2] = R
+    #     if grid[i, j] == U: expanded[i, j + 1:j + 3] = U
+    #     if grid[i, j] == D: expanded[i + 2, j + 1:j + 3] = D
+    #     if grid[i, j] == L: expanded[i + 1:i + 3, j] = L
+    #     if grid[i, j] == R: expanded[i + 1:i + 3, j + 2] = R
     #     if grid[i, j] in (U, D): grid[i, j:j + 2] = EMPTY
     #     if grid[i, j] in (L, R): grid[i:i + 2, j] = EMPTY
-    # return new
+    # return expanded
 
 def remove_facing(grid):
-    okLR = (grid[:, 1:] != L) | (grid[:, :-1] != R)
+    grid = tiling.copy_array(grid)
+    okLR = (grid[:, 1:] != Cell.L) | (grid[:, :-1] != Cell.R)
+    okUD = (grid[1:, :] != Cell.U) | (grid[:-1, :] != Cell.D)
     grid[:, 1:] *= okLR
     grid[:, :-1] *= okLR
-    okUD = (grid[1:, :] != U) | (grid[:-1, :] != D)
-    # print(okUD)
     grid[1:, :] *= okUD
     grid[:-1, :] *= okUD
-    grid[grid == 0] = EMPTY
-    return
+    grid[grid == 0] = Cell.EMPTY
+    return grid
     # for i, j in it.product(range(len(grid) - 1), range(len(grid) - 1)):
     #     if grid[i, j] == D and grid[i + 1, j] == U:
     #         grid[i:i + 2, j:j + 2] = EMPTY
@@ -80,28 +106,28 @@ def remove_facing(grid):
     #         grid[i:i + 2, j:j + 2] = EMPTY
 
 def fill_empty_rand(grid):
-    emptysq = grid[:-1, :-1] == EMPTY
-    emptysq &= grid[:-1, 1:] == EMPTY
-    emptysq &= grid[1:, :-1] == EMPTY
-    emptysq &= grid[:-1, :-1] == EMPTY
+    grid = tiling.copy_array(grid)
+    emptysq = grid[:-1, :-1] == Cell.EMPTY
+    emptysq &= grid[:-1, 1:] == Cell.EMPTY
+    emptysq &= grid[1:, :-1] == Cell.EMPTY
+    emptysq &= grid[:-1, :-1] == Cell.EMPTY
     for i in range(len(emptysq) - 1):
         emptysq[i + 1] = emptysq[i + 1] & ~emptysq[i]
         emptysq[:, i + 1] = emptysq[:, i + 1] & ~emptysq[:, i]
-    if USE_TORCH: emptysq = emptysq.to(int)
-    else: emptysq = emptysq.astype(int)
-    if USE_TORCH:
+    emptysq = emptysq.to(int) if mode == 'torch' else emptysq.astype(int)
+    if mode == 'torch':
         emptysq *= 1 + th.randint(2, size=emptysq.shape, device='cuda')
     else:
         emptysq *= 1 + np.random.randint(2, size=emptysq.shape)
-    grid[grid == EMPTY] = 0
+    grid[grid == Cell.EMPTY] = 0
     UD = emptysq == 1
-    Us, Ds = U * UD, D * UD
+    LR = emptysq == 2
+    Us, Ds = Cell.U * UD, Cell.D * UD
+    Ls, Rs = Cell.L * LR, Cell.R * LR
     grid[:-1, :-1] += Us
     grid[:-1, 1:] += Us
     grid[1:, :-1] += Ds
     grid[1:, 1:] += Ds
-    LR = emptysq == 2
-    Ls, Rs = L * LR, R * LR
     grid[:-1, :-1] += Ls
     grid[:-1, 1:] += Rs
     grid[1:, :-1] += Ls
@@ -119,52 +145,21 @@ def fill_empty_rand(grid):
     #         else:
     #             grid[i:i + 2, j] = L
     #             grid[i:i + 2, j + 1] = R
-
-def show_grid(grid):
-    if USE_TORCH:
-        _show_grids.append(grid.cpu().numpy())
-    else:
-        _show_grids.append(grid.copy())
-
-def finish_show():
-    global _show_grids
-    _show_grids = _show_grids[-9:]
-    n = int(np.ceil(np.sqrt(len(_show_grids))))
-    fig, axes = plt.subplots(n, n)
-    for i, grid in enumerate(_show_grids):
-        ax = axes
-        if n > 1: ax = axes[i // n, i % n]
-        flat = grid.ravel()
-        img = np.ones((flat.shape[0], 3))
-        img[flat == U] = (1, 0, 0)
-        img[flat == D] = (1, 0.5, 0)
-        img[flat == L] = (0, 1, 0)
-        img[flat == R] = (0, 0, 1)
-        img[flat == EMPTY] = (0.5, 0.5, 0.5)
-        img[flat == ERROR] = (0, 0, 0)
-        img[flat == CORNER] = (1, 1, 1)
-        ax.imshow(img.reshape(len(grid), len(grid), 3))
-    for a in axes.ravel() if n > 1 else [axes]:
-        a.axis('off')
-        a.spines['top'].set_visible(False)
-        a.spines['right'].set_visible(False)
-        a.spines['bottom'].set_visible(False)
-        a.spines['left'].set_visible(False)
-    plt.show()
+    return grid
 
 def make_aztec_diamond(n):
     assert n % 2 == 0
-    if USE_TORCH:
-        grid = EMPTY * th.ones((n, n), device='cuda', dtype=th.int16)
+    if mode == 'torch':
+        grid = Cell.EMPTY * th.ones((n, n), device='cuda', dtype=th.int16)
         J = th.arange(n)
         J = th.minimum(J, n - J - 1)
     else:
-        grid = EMPTY * np.ones(n * n, dtype=np.int16).reshape(n, n)
+        grid = Cell.EMPTY * np.ones(n * n, dtype=np.int16).reshape(n, n)
         J = np.arange(n)
         J = np.minimum(J, n - J - 1)
     for i in range(n // 2):
-        grid[i, i + J < n//2 - 1] = CORNER
-        grid[n - i - 1, i + J < n//2 - 1] = CORNER
+        grid[i, i + J < n//2 - 1] = Cell.CORNER
+        grid[n - i - 1, i + J < n//2 - 1] = Cell.CORNER
     return grid
     # for i in range(n // 2):
     #     for j in range(n // 2):
@@ -174,6 +169,46 @@ def make_aztec_diamond(n):
     #             grid[i, n - j - 1] = CORNER
     #             grid[n - i - 1, n - j - 1] = CORNER
     # return grid
+
+ARCTIC_CIRCLE_COLORS = {
+    Cell.U: (1, 0, 0),
+    Cell.D: (1, 0.5, 0),
+    Cell.L: (0, 1, 0),
+    Cell.R: (0, 0, 1),
+    Cell.EMPTY: (0.5, 0.5, 0.5),
+    Cell.ERROR: (0, 0, 0),
+    Cell.CORNER: (1, 1, 1),
+}
+
+def add_UDLR_grig_to_plot(grid):
+    rgb = tiling.make_rgb_array(grid, ARCTIC_CIRCLE_COLORS)
+    tiling.add_image_to_plot(rgb)
+
+def finish_UDLR_image_plot(grid, save=True):
+    rgb = tiling.make_rgb_array(grid, ARCTIC_CIRCLE_COLORS)
+    if save: tiling.save_image_from_rgb_array(rgb, label='arctic_circle')
+    tiling.add_image_to_plot(rgb)
+    tiling.show_image_plot()
+
+def arctic_circle_sanity_check():
+    if mode == 'torch': return
+    with evn.dev.temporary_random_seed(0):
+        info = compute_arctic_circle_grids(6)
+        golden = np.array([
+            [7, 7, 7, 7, 7, 1, 1, 7, 7, 7, 7, 7],
+            [7, 7, 7, 7, 1, 1, 1, 1, 7, 7, 7, 7],
+            [7, 7, 7, 1, 1, 1, 1, 1, 1, 7, 7, 7],
+            [7, 7, 1, 1, 3, 4, 3, 2, 2, 4, 7, 7],
+            [7, 3, 4, 3, 3, 4, 3, 1, 1, 4, 4, 7],
+            [3, 3, 4, 3, 3, 2, 2, 2, 2, 4, 4, 4],
+            [3, 3, 2, 2, 3, 1, 1, 3, 4, 4, 4, 4],
+            [7, 3, 3, 2, 2, 4, 3, 3, 4, 4, 4, 7],
+            [7, 7, 3, 3, 4, 4, 3, 3, 4, 4, 7, 7],
+            [7, 7, 7, 3, 4, 2, 2, 3, 4, 7, 7, 7],
+            [7, 7, 7, 7, 2, 2, 2, 2, 7, 7, 7, 7],
+            [7, 7, 7, 7, 7, 2, 2, 7, 7, 7, 7, 7],
+        ])
+        assert np.all(info.grids[-1] == golden)
 
 if __name__ == '__main__':
     main()

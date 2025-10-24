@@ -15,7 +15,14 @@
     [
         {
             "name": "subl_run_python",
-            "shell_cmd": "uv run python $file &> $folder/ide/sublime_build.log",
+            "shell_cmd": "PYTHONPATH=.. uv run python $file &> $folder/ide/sublime_build.log",
+            "working_dir": "$file_path",
+            "selector": "source.python",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "subl_run_arctic_circle",
+            "shell_cmd": "PYTHONPATH=.. uv run python arctic_circle.py &> $folder/ide/sublime_build.log",
             "working_dir": "$file_path",
             "selector": "source.python",
             "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
