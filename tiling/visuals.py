@@ -22,9 +22,15 @@ _images_to_show = []
 
 def make_rgb_array(grid, colors):
     flat = grid.ravel()
-    img = np.ones((flat.shape[0], 3))
-    for k, v in colors.items():
-        img[flat == k] = v
+    if 'torch' in sys.modules:
+        import torch
+        img = torch.ones((flat.shape[0],3))
+        for k, v in colors.items():
+            img[flat == k] = torch.tensor(v, dtype=img.dtype)
+    else:
+        img = np.ones((flat.shape[0], 3))
+        for k, v in colors.items():
+            img[flat == k] = v
     img = img.reshape(len(grid), len(grid), 3)
     return img
 
@@ -69,31 +75,21 @@ def create_video_from_arrays(rgb_frames, fname, startscale=1.0):
             f = cv2.resize(f, (startsize, startsize), interpolation=cv2.INTER_NEAREST)
         udlr = [int(n - len(f)) // 2] * 4
         frames.append(cv2.copyMakeBorder(f, *udlr, border_type, value=border_color))
-        if i % 100 == 0: print(i, flush=True)
+        # if i % 100 == 0: print(i, flush=True)
     for i in range(100):
         frames.append(frames[-1])
     writer = skvideo.io.FFmpegWriter(
         fname,
         outputdict={
             '-vcodec': 'libx264',  #use the h.264 codec
-            '-crf': '0',  #set the constant rate factor to 0, which is lossless
+            # '-crf': '0',  #set the constant rate factor to 0, which is lossless
             # '-preset':'veryslow',  #the slower the better compression, in princple, try
             #other options see https://trac.ffmpeg.org/wiki/Encode/H.264
             # '-vf': f'scale={rgb_frames[0].shape[0]}:{rgb_frames[0].shape[1]}'
         })
+    print('create video', flush=True)
     for frame in frames:
         writer.writeFrame(frame)
     writer.close()
+    print('    ...done')
 
-def create_video_from_images(folder, fname):
-    import cv2
-    assert fname.endswith('.mp4')
-    valid_images = [i for i in os.listdir(folder) if i.endswith((".jpg", ".jpeg", ".png"))]
-    first_image = cv2.imread(os.path.join(folder, valid_images[0]))
-    h, w, _ = first_image.shape
-    codec = cv2.VideoWriter_fourcc(*'mp4v')
-    vid_writer = cv2.VideoWriter(fname, codec, 30, (w, h))
-    for img in valid_images:
-        loaded_img = cv2.imread(os.path.join(folder, img))
-        vid_writer.write(loaded_img)
-    vid_writer.release()

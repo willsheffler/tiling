@@ -220,3 +220,4 @@ wheels/
 
 /img
 /mov
+.rendered*.cpp
