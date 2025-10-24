@@ -82,7 +82,7 @@ def create_video_from_arrays(rgb_frames, fname, startscale=1.0):
         fname,
         outputdict={
             '-vcodec': 'libx264',  #use the h.264 codec
-            # '-crf': '0',  #set the constant rate factor to 0, which is lossless
+            '-crf': '0',  #set the constant rate factor to 0, which is lossless
             # '-preset':'veryslow',  #the slower the better compression, in princple, try
             #other options see https://trac.ffmpeg.org/wiki/Encode/H.264
             # '-vf': f'scale={rgb_frames[0].shape[0]}:{rgb_frames[0].shape[1]}'
@@ -91,5 +91,5 @@ def create_video_from_arrays(rgb_frames, fname, startscale=1.0):
     for frame in frames:
         writer.writeFrame(frame)
     writer.close()
-    print('    ...done')
+    print('video saved:\n', os.path.abspath(fname))
 
