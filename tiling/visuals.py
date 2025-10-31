@@ -46,7 +46,7 @@ def add_image_to_plot(rgb):
 
 def show_image_plot():
     global _images_to_show
-    _images_to_show = _images_to_show[-9:]
+    # _images_to_show = _images_to_show[-9:]
     n = int(np.ceil(np.sqrt(len(_images_to_show))))
     fig, axes = plt.subplots(n, n)
     for i, rgb in enumerate(_images_to_show):
@@ -60,7 +60,7 @@ def show_image_plot():
         a.spines['left'].set_visible(False)
     plt.show()
 
-def create_video_from_arrays(rgb_frames, fname, startscale=1.0):
+def create_video_from_arrays(rgb_frames, fname, startscale=1):
     import skvideo.io, cv2
     n = rgb_frames[-1].shape[0]
     frames = []

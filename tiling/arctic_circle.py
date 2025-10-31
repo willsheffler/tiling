@@ -6,60 +6,80 @@ import numpy as np
 import evn
 import tiling
 
-# MODE = 'jonah'
-MODE = 'numpy'
+# MODE = 'loops'
+# MODE = 'numpy'
 # MODE = 'torch'
-# MODE = 'cpp'
+MODE = 'cpp'
 
 def main():
     arctic_circle_sanity_check()
-    # show_arctic_circle_steps(4, seed=0)
-    # show_arctic_circle_steps(4)
-    # show_arctic_circle_pow2(8)
-    make_arctic_circle_mov(540)
+    # show_arctic_circle_steps(4, seed=1)
+    #show_arctic_circle_steps(6)
+    # with evn.Chrono():
+        # show_arctic_circle_pow2(10, show=False)
+    # make_arctic_circle_mov(540)
+    make_arctic_circle_mov(1080)
     # evn.chronometer.report()
 
 def make_aztec_diamond_jonah(n):
     grid = Cell.EMPTY * np.ones((n, n), dtype=np.uint8)
-    for i, j in itertools.product(range(n // 2), range(n // 2)):
-        if i + j < n//2 - 1:
-            grid[i, j] = Cell.CORNER
-            grid[n - i - 1, j] = Cell.CORNER
-            grid[i, n - j - 1] = Cell.CORNER
-            grid[n - i - 1, n - j - 1] = Cell.CORNER
+    n2 = n - 2
+    n2 //= 2
+    for row in range(n2):
+        for col in range(n2):
+            grid[row, col] = Cell.CORNER
+            grid[n - row - 1, col] = Cell.CORNER
+        for col in range(n - n2, n):
+            grid[row, col] = Cell.CORNER
+            grid[n - row - 1, col] = Cell.CORNER
+        n2 -= 1
     return grid
 
 def expand_grid_jonah(grid):
     n = len(grid)
     expanded = make_aztec_diamond_jonah(n + 2)
-    for i, j in itertools.product(range(n), range(n)):
-        if grid[i, j] == Cell.U: expanded[i + 0, j + 1:j + 3] = Cell.U
-        if grid[i, j] == Cell.D: expanded[i + 2, j + 1:j + 3] = Cell.D
-        if grid[i, j] == Cell.L: expanded[i + 1:i + 3, j + 0] = Cell.L
-        if grid[i, j] == Cell.R: expanded[i + 1:i + 3, j + 2] = Cell.R
-        if grid[i, j] == Cell.U: grid[i, j:j + 2] = Cell.EMPTY
-        if grid[i, j] == Cell.D: grid[i, j:j + 2] = Cell.EMPTY
-        if grid[i, j] == Cell.L: grid[i:i + 2, j] = Cell.EMPTY
-        if grid[i, j] == Cell.R: grid[i:i + 2, j] = Cell.EMPTY
+    for row in range(n):
+        for col in range(n):
+            if grid[row, col] == Cell.U:
+                expanded[row, col+1] = Cell.U
+            if grid[row, col] == Cell.D:
+                expanded[row+2, col+1] = Cell.D
+            if grid[row, col] == Cell.L:
+                expanded[row+1, col] = Cell.L
+            if grid[row, col] == Cell.R:
+                expanded[row+1, col+2] = Cell.R
+
     return expanded
 
 def remove_facing_jonah(grid):
-    for i, j in itertools.product(range(len(grid) - 1), range(len(grid) - 1)):
-        if grid[i, j] == Cell.D and grid[i + 1, j] == Cell.U:
-            grid[i:i + 2, j:j + 2] = Cell.EMPTY
-        if grid[i, j] == Cell.R and grid[i, j + 1] == Cell.L:
-            grid[i:i + 2, j:j + 2] = Cell.EMPTY
+    n = len(grid)
+    for row in range(n-1):
+        for col in range (n-1):
+            if grid[row, col] == Cell.D and grid[row+1, col] == Cell.U:
+                grid[row, col] = Cell.EMPTY
+                grid[row+1, col] = Cell.EMPTY
+            if grid[row, col] == Cell.R and grid[row, col+1] == Cell.L:
+                grid[row, col] = Cell.EMPTY
+                grid[row, col+1] = Cell.EMPTY
+
     return grid
 
 def fill_empty_rand_jonah(grid):
-    for i, j in itertools.product(range(len(grid) - 1), range(len(grid) - 1)):
-        if np.all(grid[i:i + 2, j:j + 2] == Cell.EMPTY):
-            if np.random.rand() < 0.5:
-                grid[i, j:j + 2] = Cell.U
-                grid[i + 1, j:j + 2] = Cell.D
-            else:
-                grid[i:i + 2, j] = Cell.L
-                grid[i:i + 2, j + 1] = Cell.R
+    n = len(grid)
+    for row in range(n-1):
+        for col in range(n-1):
+            if grid[row, col] == Cell.EMPTY:
+                if np.random.randint(2):
+                    grid[row, col] = Cell.U
+                    grid[row, col+1] = Cell.U
+                    grid[row+1, col] = Cell.D
+                    grid[row+1, col+1] = Cell.D
+                else:
+                    grid[row, col] = Cell.L
+                    grid[row+1, col] = Cell.L
+                    grid[row, col+1] = Cell.R
+                    grid[row+1, col+1] = Cell.R
+
     return grid
 
 class Cell(enum.IntEnum):
@@ -100,7 +120,7 @@ def make_aztec_diamond(n):
         grid = Cell.EMPTY * np.ones((n, n), dtype=np.uint8)
         return tiling.arctic_circle_compiled.make_aztec_diamond(grid)
 
-    if MODE == 'jonah':
+    if MODE == 'loops':
         return make_aztec_diamond_jonah(n)
     elif MODE == 'torch':
         grid = Cell.EMPTY * th.ones((n, n), device='cuda', dtype=th.uint8)
@@ -120,8 +140,9 @@ def expand_grid(grid):
     n = len(grid)
     if MODE == 'cpp' and hasattr(tiling.arctic_circle_compiled, 'expand_grid'):
         expanded = make_aztec_diamond(n + 2)
-        return tiling.arctic_circle_compiled.expand_grid(grid, expanded)
-    if MODE == 'jonah':
+        tiling.arctic_circle_compiled.expand_grid(grid, expanded)
+        return expanded
+    if MODE == 'loops':
         grid = grid.copy()
         return expand_grid_jonah(grid)
     else:
@@ -140,7 +161,7 @@ def remove_facing(grid):
 
     if MODE == 'cpp' and hasattr(tiling.arctic_circle_compiled, 'remove_facing'):
         return tiling.arctic_circle_compiled.remove_facing(grid)
-    if MODE == 'jonah':
+    if MODE == 'loops':
         return remove_facing_jonah(grid)
     else:
         okLR = (grid[:, 1:] != Cell.L) | (grid[:, :-1] != Cell.R)
@@ -157,7 +178,7 @@ def fill_empty_rand(grid):
     grid = tiling.copy_array(grid)
     if MODE == 'cpp' and hasattr(tiling.arctic_circle_compiled, 'fill_empty_rand'):
         return tiling.arctic_circle_compiled.fill_empty_rand(grid)
-    if MODE == 'jonah':
+    if MODE == 'loops':
         return fill_empty_rand_jonah(grid)
     else:
         emptysq = grid[:-1, :-1] == Cell.EMPTY
@@ -210,16 +231,16 @@ def show_arctic_circle_steps(N, seed=-1):
     if seed >= 0: np.random.seed(seed)
     info = compute_arctic_circle_grids(N, debug=True)
     for step in info.steps:
-        add_UDLR_grig_to_plot(step)
+        add_UDLR_grid_to_plot(step)
     finish_UDLR_image_plot(info.grids[-1], save=False)
 
-def show_arctic_circle_pow2(power2):
+def show_arctic_circle_pow2(power2, show=True):
     N = 2**power2
     info = compute_arctic_circle_grids(N)
     for i in range(int(np.log2(N))):
         print(f'time iter {2**i:4} {info.times[2**i]*1000:7.3f}ms')
-        add_UDLR_grig_to_plot(info.grids[2**i])
-    finish_UDLR_image_plot(info.grids[-1])
+        add_UDLR_grid_to_plot(info.grids[2**i])
+    if show: finish_UDLR_image_plot(info.grids[-1])
 
 ARCTIC_CIRCLE_COLORS = {
     Cell.U: (1, 0, 0),
@@ -231,7 +252,7 @@ ARCTIC_CIRCLE_COLORS = {
     Cell.CORNER: (0.9, 0.9, 0.9),
 }
 
-def add_UDLR_grig_to_plot(grid):
+def add_UDLR_grid_to_plot(grid):
     rgb = tiling.make_rgb_array(grid, ARCTIC_CIRCLE_COLORS)
     tiling.add_image_to_plot(rgb)
 
@@ -242,7 +263,7 @@ def finish_UDLR_image_plot(grid, save=True):
     tiling.show_image_plot()
 
 def arctic_circle_sanity_check():
-    if MODE in 'torch jonah cpp'.split(): return
+    if MODE in 'torch loops cpp'.split(): return
     with evn.dev.temporary_random_seed(0):
         info = compute_arctic_circle_grids(6)
         golden = np.array([
